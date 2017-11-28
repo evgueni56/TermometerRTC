@@ -36,17 +36,16 @@ char ssid[] = "Termometer"; // Name of the access point
 char auth[] = "200f39268733491caf0bc157ead14d93";//"2e46004acfa446649327e04bad56fe22"; // Authentication key to Blynk
 char Timestring[14]; // Format the time output to the LCD
 String message, t_ssdi, t_pw, st, content;
-// IPAddress currentIP;
-unsigned long Myhour, Myminute, Mysecond, Myyear, Mymonth, Myday, leap;
-byte DST; // Daylight Saving flag
 
 char epromdata[512];
+uint32_t eprom_crc;
 
 const int led = 0;
 int pinValue = 1;
 int ReadStatus = 0;
 int BlynkSTimeout = 0;
 float BatteryV;
+
 //Timer instantiate
 BlynkTimer SleepTimer;
 struct
@@ -86,9 +85,10 @@ void setup()
 	setTime(rtcData.currentSecond); // set internal timer
 	EEPROM.begin(512);
 	EEPROM.get(0, epromdata);
+	EEPROM.get(509, eprom_crc);
+	if (eprom_crc != calculateCRC32((uint8_t *)epromdata, 508)) // Initial state of the EEPROM
+		epromdata[0] = 0;
 	numnets = epromdata[0];
-	DST = epromdata[511];
-	adjustDST();
 	pinMode(led, OUTPUT);
 	digitalWrite(led, 1);
 	Wire.begin();
@@ -153,11 +153,12 @@ void setup()
 
 void loop()
 {
-	if (wifi_cause)
+	if (wifi_cause == 5) // No need to start AP
 	{
-		server.handleClient();
 		SleepTimer.run();
 	}
+	else if (wifi_cause)
+		server.handleClient();
 	else
 	{
 		SleepTimer.run();
@@ -386,6 +387,8 @@ void launchWeb(void)
 bool append_ssdi(void)
 {
 	epromdata[0]++;
+	if (epromdata[0] > 10)
+		return FALSE;
 	for (i = 0; i < qsid.length(); i++)
 		epromdata[i + buf_pointer] = qsid[i];
 	buf_pointer += qsid.length();
@@ -396,8 +399,9 @@ bool append_ssdi(void)
 	buf_pointer += qpass.length();
 	epromdata[buf_pointer] = 0;
 	buf_pointer++;
-	if (buf_pointer > 511) return FALSE; // Exceeded the EEPROM size
+	eprom_crc = calculateCRC32((uint8_t *)epromdata, 508);
 	EEPROM.put(0, epromdata);
+	EEPROM.put(509, eprom_crc);
 	EEPROM.commit();
 	delay(500);
 	return TRUE;
@@ -446,25 +450,6 @@ uint32_t calculateCRC32(const uint8_t *data, size_t length)
 	return crc;
 }
 
-void adjustDST(void)
-{
-	if (weekday() == 1 && month() == 10 && day() >= 25 && day() <= 31 && hour() == 3 && DST == 1)
-	{
-		adjustTime(-3600);
-		DST = 0;
-		EEPROM.put(511, DST);
-		EEPROM.commit();
-		return;
-	}
-	if (weekday() == 1 && month() == 3 && day() >= 25 && day() <= 31 && hour() == 2 && DST == 0)
-	{
-		adjustTime(3600);
-		DST = 1;
-		EEPROM.put(511, DST);
-		EEPROM.commit();
-		return;
-	}
-}
 
 void GOrestart()
 {
