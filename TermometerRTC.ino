@@ -33,12 +33,12 @@ DeviceAddress insideThermometer;
 
 float tempC;
 char ssid[] = "Termometer"; // Name of the access point
-char auth[] = "200f39268733491caf0bc157ead14d93";//"2e46004acfa446649327e04bad56fe22"; // Authentication key to Blynk
+char auth[] = "874241f382a24ffab44897dbbbe3d7ba";//"2e46004acfa446649327e04bad56fe22"; // Authentication key to Blynk
 char Timestring[14]; // Format the time output to the LCD
 String message, t_ssdi, t_pw, st, content;
 
-char epromdata[512];
-uint32_t eprom_crc;
+char epromdata[500];
+uint32_t *eprom_crc;
 
 const int led = 0;
 int pinValue = 1;
@@ -70,6 +70,7 @@ WidgetRTC rtc;
 void setup()
 {
 	Serial.begin(74880);
+	eprom_crc = (uint32_t *) epromdata + 496;
 	WiFi.softAPdisconnect(); // Cleanup - might be up from previuos session
 	ESP.rtcUserMemoryRead(0, (uint32_t *)&rtcData, sizeof(rtcData));
 	if (rtcData.crc != calculateCRC32((uint8_t *)&rtcData, sizeof(rtcData) - 4)) // Check data integrity
@@ -85,8 +86,9 @@ void setup()
 	setTime(rtcData.currentSecond); // set internal timer
 	EEPROM.begin(512);
 	EEPROM.get(0, epromdata);
-	EEPROM.get(509, eprom_crc);
-	if (eprom_crc != calculateCRC32((uint8_t *)epromdata, 508)) // Initial state of the EEPROM
+	Serial.println("start");
+	Serial.println(*eprom_crc);
+	if (*eprom_crc != calculateCRC32((uint8_t *)epromdata, 496)) // Initial state of the EEPROM
 		epromdata[0] = 0;
 	numnets = epromdata[0];
 	pinMode(led, OUTPUT);
@@ -119,7 +121,7 @@ void setup()
 	{
 		MyLcd.clearDisplay();
 		MyLcd.setFont();
-		Blynk.config(auth/*, IPAddress(84,40,82,37)*/);
+		Blynk.config(auth, IPAddress(84,40,82,37));
 	}
 	break;
 	case 1: //A known network does not connect
@@ -261,7 +263,7 @@ void SleepTFunc()
 	//	Serial.println(String("ReadStatus: ") + ReadStatus);
 
 	if (ReadStatus < 2) return; // No value of the button yet
-	if (pinValue) // Light is not ON - going to sleep
+	if (pinValue && rtcData.MINUTES) // Light is not ON - going to sleep
 	{
 		GoSleep();
 	}
@@ -399,11 +401,12 @@ bool append_ssdi(void)
 	buf_pointer += qpass.length();
 	epromdata[buf_pointer] = 0;
 	buf_pointer++;
-	eprom_crc = calculateCRC32((uint8_t *)epromdata, 508);
+	*eprom_crc = calculateCRC32((uint8_t *)epromdata, 496);
+	Serial.println("end");
+	Serial.println(*eprom_crc);
+	Serial.println((uint32_t)*(epromdata + 496));
 	EEPROM.put(0, epromdata);
-	EEPROM.put(509, eprom_crc);
 	EEPROM.commit();
-	delay(500);
 	return TRUE;
 }
 
